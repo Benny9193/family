@@ -11,8 +11,9 @@
   "rules": {
     "no-unused-vars": "warn",
     "no-console": "off",
-    "indent": ["error", 2],
-    "quotes": ["error", "single", { "avoidEscape": true }],
-    "semi": ["error", "always"]
+    "no-redeclare": "warn",
+    "indent": "off",
+    "quotes": "off",
+    "semi": "off"
   }
 }

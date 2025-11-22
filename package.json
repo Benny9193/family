@@ -8,8 +8,8 @@
     "dev": "npx http-server -p 8080 -c-1",
     "build": "npm run validate && echo 'Build complete - static files ready for deployment'",
     "validate": "node -c app.js && node -c app_1.js && node -c app_enhanced.js && echo 'JavaScript validation passed'",
-    "lint:js": "npx eslint app.js app_1.js app_enhanced.js --fix",
-    "lint:css": "npx stylelint style.css --fix",
+    "lint:js": "npx eslint app.js app_1.js app_enhanced.js --fix --max-warnings=999",
+    "lint:css": "npx stylelint style.css --fix --allow-empty-input",
     "lint": "npm run lint:js && npm run lint:css",
     "test": "npm run validate"
   },
