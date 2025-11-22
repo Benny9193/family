@@ -1,0 +1,30 @@
+{
+  "name": "lewis-family-history",
+  "version": "1.0.0",
+  "description": "The Lewis Family History - Interactive website documenting seven generations of the Lewis family in Tallahassee, Florida",
+  "main": "app.js",
+  "scripts": {
+    "start": "npx http-server -p 8080 -o",
+    "dev": "npx http-server -p 8080 -c-1",
+    "build": "npm run validate && echo 'Build complete - static files ready for deployment'",
+    "validate": "node -c app.js && node -c app_1.js && node -c app_enhanced.js && echo 'JavaScript validation passed'",
+    "lint:js": "npx eslint app.js app_1.js app_enhanced.js --fix --max-warnings=999",
+    "lint:css": "npx stylelint style.css --fix --allow-empty-input",
+    "lint": "npm run lint:js && npm run lint:css",
+    "test": "npm run validate"
+  },
+  "keywords": [
+    "family-history",
+    "genealogy",
+    "tallahassee",
+    "lewis-family"
+  ],
+  "author": "Lewis Family",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "http-server": "^14.1.1",
+    "stylelint": "^15.11.0",
+    "stylelint-config-standard": "^34.0.0"
+  }
+}
