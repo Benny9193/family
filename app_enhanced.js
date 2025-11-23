@@ -1717,6 +1717,13 @@ document.addEventListener('DOMContentLoaded', function() {
   initializeHistoricalContext();
   initializeMigrationMap();
   initializePhotoGalleries();
+  initializeStatisticsDashboard();
+  initializeComparisonTool();
+  initializeTimelinePlayback();
+  initializeShareFunctionality();
+  initializePropertyMap();
+  // Handle deep links on initial load
+  setTimeout(handleDeepLinks, 100);
   animateOnScroll();
 });
 
@@ -3813,6 +3820,20 @@ function initializeStatisticsDashboard() {
   renderTimelineDensityChart();
   renderGenerationOverlapChart();
   renderQuickFacts();
+  
+  // Re-render charts on window resize
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      renderGenerationChart();
+      renderLifespanChart();
+      renderOccupationChart();
+      renderAchievementChart();
+      renderTimelineDensityChart();
+      renderGenerationOverlapChart();
+    }, 250);
+  });
 }
 
 function renderGenerationChart() {
