@@ -2848,8 +2848,17 @@ function showMemberModalWithRelationships(memberId) {
 }
 
 // Replace the original showMemberModal function
+let currentModalMemberId = null;
+
 function showMemberModal(memberId) {
+  currentModalMemberId = memberId;
   showMemberModalWithRelationships(memberId);
+  
+  // Update compare button
+  const compareBtn = document.getElementById('compare-member-btn');
+  if (compareBtn) {
+    compareBtn.setAttribute('data-member-id', memberId);
+  }
 }
 
 // Migration Map Implementation
@@ -3789,5 +3798,870 @@ window.showMemberModal = showMemberModal;
 window.showMemberModalWithRelationships = showMemberModalWithRelationships;
 window.relationshipMapper = relationshipMapper;
 window.closeModal = closeModal;
+
+// ============================================
+// Statistics Dashboard Implementation
+// ============================================
+
+function initializeStatisticsDashboard() {
+  if (!document.getElementById('generation-chart')) return;
+  
+  renderGenerationChart();
+  renderLifespanChart();
+  renderOccupationChart();
+  renderAchievementChart();
+  renderTimelineDensityChart();
+  renderGenerationOverlapChart();
+  renderQuickFacts();
+}
+
+function renderGenerationChart() {
+  const canvas = document.getElementById('generation-chart');
+  if (!canvas) return;
+  
+  // Set canvas size
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth || 300;
+    canvas.height = 250;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  const generationCounts = {};
+  
+  familyData.familyMembers.forEach(member => {
+    const gen = member.generation || 0;
+    generationCounts[gen] = (generationCounts[gen] || 0) + 1;
+  });
+  
+  const generations = Object.keys(generationCounts).sort((a, b) => a - b);
+  const counts = generations.map(gen => generationCounts[gen]);
+  
+  // Simple bar chart using canvas
+  const maxCount = Math.max(...counts, 1);
+  const barWidth = canvas.width / Math.max(generations.length, 1);
+  const scale = (canvas.height - 40) / maxCount;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#2C5F78';
+  
+  generations.forEach((gen, i) => {
+    const barHeight = counts[i] * scale;
+    ctx.fillRect(i * barWidth + 10, canvas.height - barHeight - 20, barWidth - 20, barHeight);
+    ctx.fillStyle = '#1A365D';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(`Gen ${gen}`, i * barWidth + 10, canvas.height - 5);
+    ctx.fillStyle = '#2C5F78';
+  });
+}
+
+function renderLifespanChart() {
+  const canvas = document.getElementById('lifespan-chart');
+  if (!canvas) return;
+  
+  // Set canvas size
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth || 300;
+    canvas.height = 250;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  const lifespans = [];
+  const generationLifespans = {};
+  
+  familyData.familyMembers.forEach(member => {
+    const dates = member.dates.match(/(\d{4})/g);
+    if (dates && dates.length >= 2) {
+      const birth = parseInt(dates[0]);
+      const death = parseInt(dates[1]);
+      const lifespan = death - birth;
+      lifespans.push(lifespan);
+      
+      const gen = member.generation || 0;
+      if (!generationLifespans[gen]) {
+        generationLifespans[gen] = [];
+      }
+      generationLifespans[gen].push(lifespan);
+    }
+  });
+  
+  const avgLifespan = lifespans.reduce((a, b) => a + b, 0) / lifespans.length;
+  const minLifespan = Math.min(...lifespans);
+  const maxLifespan = Math.max(...lifespans);
+  
+  // Display statistics
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#1A365D';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('Average: ' + Math.round(avgLifespan) + ' years', 10, 25);
+  ctx.fillText('Min: ' + minLifespan + ' years', 10, 45);
+  ctx.fillText('Max: ' + maxLifespan + ' years', 10, 65);
+  
+  // Simple bar visualization
+  const barWidth = 30;
+  const scale = (canvas.width - 100) / maxLifespan;
+  ctx.fillStyle = '#CA9018';
+  ctx.fillRect(50, canvas.height - 30, avgLifespan * scale, 20);
+  ctx.fillStyle = '#2C5F78';
+  ctx.fillRect(50, canvas.height - 60, minLifespan * scale, 20);
+  ctx.fillStyle = '#1A365D';
+  ctx.fillRect(50, canvas.height - 90, maxLifespan * scale, 20);
+}
+
+function renderOccupationChart() {
+  const canvas = document.getElementById('occupation-chart');
+  if (!canvas) return;
+  
+  // Set canvas size
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth || 300;
+    canvas.height = 250;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  const occupations = {};
+  
+  familyData.familyMembers.forEach(member => {
+    if (member.occupation) {
+      const occ = member.occupation.split(',')[0].trim();
+      occupations[occ] = (occupations[occ] || 0) + 1;
+    }
+  });
+  
+  const occEntries = Object.entries(occupations).sort((a, b) => b[1] - a[1]);
+  const maxCount = Math.max(...occEntries.map(o => o[1]));
+  const barHeight = (canvas.height - 60) / occEntries.length;
+  const scale = (canvas.width - 150) / maxCount;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#2C5F78';
+  
+  occEntries.forEach((occ, i) => {
+    const width = occ[1] * scale;
+    ctx.fillRect(120, i * barHeight + 10, width, barHeight - 5);
+    ctx.fillStyle = '#1A365D';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(occ[0].substring(0, 15), 5, i * barHeight + 20);
+    ctx.fillText(occ[1], width + 125, i * barHeight + 20);
+    ctx.fillStyle = '#2C5F78';
+  });
+}
+
+function renderAchievementChart() {
+  const canvas = document.getElementById('achievement-chart');
+  if (!canvas) return;
+  
+  // Set canvas size
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth || 300;
+    canvas.height = 250;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  const achievementKeywords = {};
+  
+  familyData.familyMembers.forEach(member => {
+    if (member.achievements) {
+      member.achievements.forEach(achievement => {
+        const words = achievement.toLowerCase().match(/\b\w{4,}\b/g) || [];
+        words.forEach(word => {
+          if (!['the', 'and', 'for', 'with', 'from', 'that', 'this'].includes(word)) {
+            achievementKeywords[word] = (achievementKeywords[word] || 0) + 1;
+          }
+        });
+      });
+    }
+  });
+  
+  const topKeywords = Object.entries(achievementKeywords)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  
+  const maxCount = Math.max(...topKeywords.map(k => k[1]));
+  const barHeight = (canvas.height - 20) / topKeywords.length;
+  const scale = (canvas.width - 120) / maxCount;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#CA9018';
+  
+  topKeywords.forEach((keyword, i) => {
+    const width = keyword[1] * scale;
+    ctx.fillRect(100, i * barHeight + 5, width, barHeight - 5);
+    ctx.fillStyle = '#1A365D';
+    ctx.font = '10px sans-serif';
+    ctx.fillText(keyword[0].substring(0, 12), 5, i * barHeight + 15);
+    ctx.fillText(keyword[1], width + 105, i * barHeight + 15);
+    ctx.fillStyle = '#CA9018';
+  });
+}
+
+function renderTimelineDensityChart() {
+  const canvas = document.getElementById('timeline-density-chart');
+  if (!canvas) return;
+  
+  // Set canvas size
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth || 300;
+    canvas.height = 250;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  const decades = {};
+  
+  familyData.timeline.forEach(event => {
+    const decade = Math.floor(event.year / 10) * 10;
+    decades[decade] = (decades[decade] || 0) + 1;
+  });
+  
+  const decadeKeys = Object.keys(decades).sort((a, b) => a - b);
+  const maxCount = Math.max(...Object.values(decades));
+  const barWidth = (canvas.width - 60) / decadeKeys.length;
+  const scale = (canvas.height - 40) / maxCount;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#2C5F78';
+  
+  decadeKeys.forEach((decade, i) => {
+    const barHeight = decades[decade] * scale;
+    ctx.fillRect(i * barWidth + 30, canvas.height - barHeight - 20, barWidth - 5, barHeight);
+    ctx.fillStyle = '#1A365D';
+    ctx.font = '9px sans-serif';
+    ctx.save();
+    ctx.translate(i * barWidth + 35, canvas.height - 5);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillText(decade.toString(), 0, 0);
+    ctx.restore();
+    ctx.fillStyle = '#2C5F78';
+  });
+}
+
+function renderGenerationOverlapChart() {
+  const canvas = document.getElementById('generation-overlap-chart');
+  if (!canvas) return;
+  
+  // Set canvas size
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth || 300;
+    canvas.height = 250;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  const generationRanges = {};
+  
+  familyData.familyMembers.forEach(member => {
+    const dates = member.dates.match(/(\d{4})/g);
+    if (dates && dates.length >= 2) {
+      const gen = member.generation || 0;
+      if (!generationRanges[gen]) {
+        generationRanges[gen] = { min: Infinity, max: -Infinity };
+      }
+      const birth = parseInt(dates[0]);
+      const death = parseInt(dates[1]);
+      generationRanges[gen].min = Math.min(generationRanges[gen].min, birth);
+      generationRanges[gen].max = Math.max(generationRanges[gen].max, death);
+    }
+  });
+  
+  const minYear = Math.min(...Object.values(generationRanges).map(r => r.min));
+  const maxYear = Math.max(...Object.values(generationRanges).map(r => r.max));
+  const yearRange = maxYear - minYear;
+  const scale = (canvas.width - 100) / yearRange;
+  const barHeight = (canvas.height - 40) / Object.keys(generationRanges).length;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  Object.keys(generationRanges).sort((a, b) => a - b).forEach((gen, i) => {
+    const range = generationRanges[gen];
+    const startX = (range.min - minYear) * scale + 50;
+    const width = (range.max - range.min) * scale;
+    const y = i * barHeight + 10;
+    
+    ctx.fillStyle = `hsl(${220 + i * 30}, 70%, 50%)`;
+    ctx.fillRect(startX, y, width, barHeight - 5);
+    ctx.fillStyle = '#1A365D';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`Gen ${gen}`, 5, y + barHeight / 2);
+  });
+  
+  // Year labels
+  ctx.fillStyle = '#1A365D';
+  ctx.font = '9px sans-serif';
+  for (let year = minYear; year <= maxYear; year += 50) {
+    const x = (year - minYear) * scale + 50;
+    ctx.fillText(year.toString(), x, canvas.height - 5);
+  }
+}
+
+function renderQuickFacts() {
+  const container = document.getElementById('quick-facts');
+  if (!container) return;
+  
+  const totalMembers = familyData.familyMembers.length;
+  const totalGenerations = new Set(familyData.familyMembers.map(m => m.generation)).size;
+  const totalProperties = familyData.properties.length;
+  const totalTimelineEvents = familyData.timeline.length;
+  
+  const dates = familyData.familyMembers
+    .map(m => m.dates.match(/(\d{4})/g))
+    .filter(d => d && d.length >= 2)
+    .map(d => ({ birth: parseInt(d[0]), death: parseInt(d[1]) }));
+  
+  const oldestBirth = Math.min(...dates.map(d => d.birth));
+  const newestDeath = Math.max(...dates.map(d => d.death));
+  const span = newestDeath - oldestBirth;
+  
+  container.innerHTML = `
+    <div class="fact-item">
+      <strong>Total Family Members:</strong> ${totalMembers}
+    </div>
+    <div class="fact-item">
+      <strong>Generations Documented:</strong> ${totalGenerations}
+    </div>
+    <div class="fact-item">
+      <strong>Historical Properties:</strong> ${totalProperties}
+    </div>
+    <div class="fact-item">
+      <strong>Timeline Events:</strong> ${totalTimelineEvents}
+    </div>
+    <div class="fact-item">
+      <strong>Family History Span:</strong> ${span} years (${oldestBirth}-${newestDeath})
+    </div>
+  `;
+}
+
+// ============================================
+// Member Comparison Tool
+// ============================================
+
+let selectedMember1 = null;
+let selectedMember2 = null;
+
+function initializeComparisonTool() {
+  const select1 = document.getElementById('compare-member-1');
+  const select2 = document.getElementById('compare-member-2');
+  
+  if (!select1 || !select2) return;
+  
+  // Populate dropdowns
+  familyData.familyMembers.forEach(member => {
+    const option1 = document.createElement('option');
+    option1.value = member.id;
+    option1.textContent = member.name;
+    select1.appendChild(option1);
+    
+    const option2 = document.createElement('option');
+    option2.value = member.id;
+    option2.textContent = member.name;
+    select2.appendChild(option2);
+  });
+  
+  select1.addEventListener('change', function() {
+    selectedMember1 = parseInt(this.value);
+  });
+  
+  select2.addEventListener('change', function() {
+    selectedMember2 = parseInt(this.value);
+  });
+}
+
+function openComparisonModal() {
+  const modal = document.getElementById('comparison-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    
+    // Pre-select current member if available
+    if (currentModalMemberId) {
+      const select1 = document.getElementById('compare-member-1');
+      if (select1) {
+        select1.value = currentModalMemberId;
+        selectedMember1 = currentModalMemberId;
+      }
+    }
+  }
+}
+
+function closeComparisonModal() {
+  const modal = document.getElementById('comparison-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+  }
+}
+
+function performComparison() {
+  if (!selectedMember1 || !selectedMember2) {
+    alert('Please select two members to compare');
+    return;
+  }
+  
+  const member1 = familyData.familyMembers.find(m => m.id === selectedMember1);
+  const member2 = familyData.familyMembers.find(m => m.id === selectedMember2);
+  
+  if (!member1 || !member2) return;
+  
+  const results = document.getElementById('comparison-results');
+  if (!results) return;
+  
+  const dates1 = member1.dates.match(/(\d{4})/g) || [];
+  const dates2 = member2.dates.match(/(\d{4})/g) || [];
+  const birth1 = dates1[0] ? parseInt(dates1[0]) : null;
+  const death1 = dates1[1] ? parseInt(dates1[1]) : null;
+  const birth2 = dates2[0] ? parseInt(dates2[0]) : null;
+  const death2 = dates2[1] ? parseInt(dates2[1]) : null;
+  
+  results.innerHTML = `
+    <div class="comparison-grid">
+      <div class="comparison-column">
+        <h3>${member1.name}</h3>
+        <div class="comparison-item">
+          <strong>Dates:</strong> ${member1.dates}
+        </div>
+        <div class="comparison-item">
+          <strong>Generation:</strong> ${member1.generation || 'N/A'}
+        </div>
+        <div class="comparison-item">
+          <strong>Occupation:</strong> ${member1.occupation || 'N/A'}
+        </div>
+        <div class="comparison-item">
+          <strong>Spouse:</strong> ${member1.spouse || 'N/A'}
+        </div>
+        <div class="comparison-item">
+          <strong>Children:</strong> ${member1.children ? member1.children.length : 0}
+        </div>
+        <div class="comparison-item">
+          <strong>Achievements:</strong> ${member1.achievements ? member1.achievements.length : 0}
+        </div>
+        <div class="comparison-item">
+          <strong>Categories:</strong> ${member1.categories ? member1.categories.join(', ') : 'N/A'}
+        </div>
+      </div>
+      <div class="comparison-column">
+        <h3>${member2.name}</h3>
+        <div class="comparison-item">
+          <strong>Dates:</strong> ${member2.dates}
+        </div>
+        <div class="comparison-item">
+          <strong>Generation:</strong> ${member2.generation || 'N/A'}
+        </div>
+        <div class="comparison-item">
+          <strong>Occupation:</strong> ${member2.occupation || 'N/A'}
+        </div>
+        <div class="comparison-item">
+          <strong>Spouse:</strong> ${member2.spouse || 'N/A'}
+        </div>
+        <div class="comparison-item">
+          <strong>Children:</strong> ${member2.children ? member2.children.length : 0}
+        </div>
+        <div class="comparison-item">
+          <strong>Achievements:</strong> ${member2.achievements ? member2.achievements.length : 0}
+        </div>
+        <div class="comparison-item">
+          <strong>Categories:</strong> ${member2.categories ? member2.categories.join(', ') : 'N/A'}
+        </div>
+      </div>
+    </div>
+    <div class="comparison-similarities">
+      <h4>Similarities & Differences</h4>
+      <ul>
+        <li>${member1.generation === member2.generation ? 'Same generation' : 'Different generations'}</li>
+        <li>${birth1 && birth2 ? Math.abs(birth1 - birth2) + ' years apart' : 'Unknown birth years'}</li>
+        <li>${member1.categories && member2.categories && 
+          member1.categories.some(c => member2.categories.includes(c)) ? 
+          'Shared categories' : 'Different categories'}</li>
+      </ul>
+    </div>
+  `;
+}
+
+// ============================================
+// Export & Print Functionality
+// ============================================
+
+function exportFamilyTree() {
+  const treeContainer = document.getElementById('family-tree');
+  if (!treeContainer) return;
+  
+  // Create a new window for printing
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Lewis Family Tree</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #1A365D; }
+          .tree-level { margin: 20px 0; }
+          .tree-node { border: 1px solid #ccc; padding: 10px; margin: 5px; display: inline-block; }
+        </style>
+      </head>
+      <body>
+        <h1>Lewis Family Tree</h1>
+        ${treeContainer.innerHTML}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
+}
+
+function printFamilyTree() {
+  exportFamilyTree();
+}
+
+function exportTimeline() {
+  const timelineContainer = document.getElementById('timeline-container');
+  if (!timelineContainer) return;
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Lewis Family Timeline</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #1A365D; }
+          .timeline-item { margin: 15px 0; padding: 10px; border-left: 3px solid #CA9018; }
+        </style>
+      </head>
+      <body>
+        <h1>Lewis Family Timeline</h1>
+        ${timelineContainer.innerHTML}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
+}
+
+function exportTimelineCSV() {
+  let csv = 'Year,Event\n';
+  familyData.timeline.forEach(event => {
+    csv += `${event.year},"${event.event.replace(/"/g, '""')}"\n`;
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'lewis-family-timeline.csv';
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+function exportMembersCSV() {
+  let csv = 'ID,Name,Dates,Generation,Occupation,Spouse,Children Count,Achievements Count\n';
+  familyData.familyMembers.forEach(member => {
+    const childrenCount = member.children ? member.children.length : 0;
+    const achievementsCount = member.achievements ? member.achievements.length : 0;
+    csv += `${member.id},"${member.name.replace(/"/g, '""')}","${member.dates}","${member.generation || ''}","${(member.occupation || '').replace(/"/g, '""')}","${(member.spouse || '').replace(/"/g, '""')}",${childrenCount},${achievementsCount}\n`;
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'lewis-family-members.csv';
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+function printMember() {
+  const modalBody = document.getElementById('modal-body');
+  if (!modalBody) return;
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Family Member Profile</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h2 { color: #1A365D; }
+        </style>
+      </head>
+      <body>
+        ${modalBody.innerHTML}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
+}
+
+// ============================================
+// Interactive Property Map
+// ============================================
+
+let propertyMap = null;
+let propertyMapVisible = false;
+
+function initializePropertyMap() {
+  // Map will be rendered when toggled
+}
+
+function togglePropertyMap() {
+  const container = document.getElementById('property-map-container');
+  const grid = document.getElementById('properties-grid');
+  
+  if (!container) return;
+  
+  propertyMapVisible = !propertyMapVisible;
+  
+  if (propertyMapVisible) {
+    container.style.display = 'block';
+    if (grid) grid.style.display = 'none';
+    renderPropertyMap();
+  } else {
+    container.style.display = 'none';
+    if (grid) grid.style.display = 'grid';
+  }
+}
+
+function renderPropertyMap() {
+  const mapContainer = document.getElementById('property-map');
+  if (!mapContainer || propertyMap) return;
+  
+  // Create simple SVG map
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '500');
+  svg.setAttribute('viewBox', '0 0 800 500');
+  svg.style.border = '1px solid #ccc';
+  svg.style.backgroundColor = '#f5f5f5';
+  
+  // Draw Tallahassee area (simplified)
+  const tallahasseeCenter = [400, 250];
+  
+  // Add markers for each property
+  familyData.properties.forEach((property, index) => {
+    if (property.coordinates) {
+      // Convert coordinates to SVG coordinates (simplified)
+      const lat = property.coordinates[0];
+      const lon = property.coordinates[1];
+      const x = 400 + (lon + 84.28) * 100;
+      const y = 250 - (lat - 30.45) * 100;
+      
+      // Draw marker
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', x);
+      circle.setAttribute('cy', y);
+      circle.setAttribute('r', '8');
+      circle.setAttribute('fill', '#CA9018');
+      circle.setAttribute('stroke', '#1A365D');
+      circle.setAttribute('stroke-width', '2');
+      circle.style.cursor = 'pointer';
+      
+      circle.addEventListener('click', () => {
+        showPropertyDetails(property);
+      });
+      
+      svg.appendChild(circle);
+      
+      // Add label
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', x);
+      text.setAttribute('y', y - 15);
+      text.setAttribute('font-size', '12');
+      text.setAttribute('fill', '#1A365D');
+      text.setAttribute('text-anchor', 'middle');
+      text.textContent = property.name.substring(0, 15);
+      svg.appendChild(text);
+    }
+  });
+  
+  mapContainer.innerHTML = '';
+  mapContainer.appendChild(svg);
+  propertyMap = svg;
+}
+
+function showPropertyDetails(property) {
+  alert(`${property.name}\n\n${property.description}\n\nEstablished: ${property.established}\n${property.address || ''}`);
+}
+
+// ============================================
+// Timeline Playback Feature
+// ============================================
+
+let timelinePlaybackInterval = null;
+let currentPlaybackIndex = 0;
+let playbackSpeed = 1;
+
+function initializeTimelinePlayback() {
+  // Already initialized in HTML
+}
+
+function toggleTimelinePlayback() {
+  const playBtn = document.getElementById('playback-play');
+  const icon = document.getElementById('playback-icon');
+  
+  if (timelinePlaybackInterval) {
+    // Pause
+    clearInterval(timelinePlaybackInterval);
+    timelinePlaybackInterval = null;
+    icon.textContent = '▶';
+    playBtn.textContent = '▶ Play Timeline';
+  } else {
+    // Play
+    const speedSelect = document.getElementById('playback-speed');
+    playbackSpeed = parseInt(speedSelect.value);
+    
+    icon.textContent = '⏸';
+    playBtn.textContent = '⏸ Pause Timeline';
+    
+    timelinePlaybackInterval = setInterval(() => {
+      playNextTimelineEvent();
+    }, 2000 / playbackSpeed);
+  }
+}
+
+function playNextTimelineEvent() {
+  const items = document.querySelectorAll('.timeline-item');
+  if (currentPlaybackIndex >= items.length) {
+    // Reset
+    currentPlaybackIndex = 0;
+    items.forEach(item => {
+      item.classList.remove('playing');
+    });
+  }
+  
+  // Remove playing class from all
+  items.forEach(item => {
+    item.classList.remove('playing');
+  });
+  
+  // Add playing class to current
+  if (items[currentPlaybackIndex]) {
+    items[currentPlaybackIndex].classList.add('playing');
+    items[currentPlaybackIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Update progress
+    const progress = document.getElementById('playback-progress');
+    const yearDisplay = document.getElementById('playback-year');
+    if (progress) {
+      progress.value = (currentPlaybackIndex / items.length) * 100;
+    }
+    if (yearDisplay && familyData.timeline[currentPlaybackIndex]) {
+      yearDisplay.textContent = familyData.timeline[currentPlaybackIndex].year;
+    }
+  }
+  
+  currentPlaybackIndex++;
+}
+
+function seekTimeline(value) {
+  const items = document.querySelectorAll('.timeline-item');
+  const index = Math.floor((value / 100) * items.length);
+  currentPlaybackIndex = index;
+  
+  items.forEach(item => {
+    item.classList.remove('playing');
+  });
+  
+  if (items[index]) {
+    items[index].classList.add('playing');
+    items[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    const yearDisplay = document.getElementById('playback-year');
+    if (yearDisplay && familyData.timeline[index]) {
+      yearDisplay.textContent = familyData.timeline[index].year;
+    }
+  }
+}
+
+// ============================================
+// Share & Permalink Functionality
+// ============================================
+
+function initializeShareFunctionality() {
+  // Check for deep links on load
+  window.addEventListener('hashchange', handleDeepLinks);
+}
+
+function handleDeepLinks() {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return;
+  
+  // Handle member links
+  const memberMatch = hash.match(/^member-(\d+)$/);
+  if (memberMatch) {
+    const memberId = parseInt(memberMatch[1]);
+    setTimeout(() => {
+      showMemberModal(memberId);
+    }, 500);
+    return;
+  }
+  
+  // Handle section links
+  const section = document.getElementById(hash);
+  if (section) {
+    setTimeout(() => {
+      section.scrollIntoView({ behavior: 'smooth' });
+    }, 300);
+  }
+}
+
+function shareMember() {
+  const modalBody = document.getElementById('modal-body');
+  if (!modalBody) return;
+  
+  const memberName = modalBody.querySelector('h2');
+  if (!memberName) return;
+  
+  // Find member ID from modal
+  const member = familyData.familyMembers.find(m => 
+    modalBody.textContent.includes(m.name)
+  );
+  
+  if (member) {
+    const shareUrl = window.location.origin + window.location.pathname + '#member-' + member.id;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: `${member.name} - Lewis Family History`,
+        text: `Learn about ${member.name} from the Lewis Family History`,
+        url: shareUrl
+      });
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert('Link copied to clipboard!');
+      });
+    }
+  }
+}
+
+function generateShareLink(type, id) {
+  const baseUrl = window.location.origin + window.location.pathname;
+  switch(type) {
+  case 'member':
+    return baseUrl + '#member-' + id;
+  case 'section':
+    return baseUrl + '#' + id;
+  default:
+    return baseUrl;
+  }
+}
+
+// Make functions globally available
+window.openComparisonModal = openComparisonModal;
+window.closeComparisonModal = closeComparisonModal;
+window.performComparison = performComparison;
+window.exportFamilyTree = exportFamilyTree;
+window.printFamilyTree = printFamilyTree;
+window.exportTimeline = exportTimeline;
+window.exportTimelineCSV = exportTimelineCSV;
+window.exportMembersCSV = exportMembersCSV;
+window.printMember = printMember;
+window.togglePropertyMap = togglePropertyMap;
+window.toggleTimelinePlayback = toggleTimelinePlayback;
+window.seekTimeline = seekTimeline;
+window.shareMember = shareMember;
+window.handleDeepLinks = handleDeepLinks;
 
 console.log('Enhanced JavaScript with relationship mapping loaded successfully');
