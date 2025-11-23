@@ -4669,6 +4669,835 @@ function generateShareLink(type, id) {
   }
 }
 
+// ============================================
+// PHASE 1: ENHANCED SEARCH & DISCOVERY
+// ============================================
+
+// Build search index from family data
+function buildSearchIndex() {
+  const index = [];
+
+  // Index family members
+  familyData.familyMembers.forEach(member => {
+    const searchableText = `
+      ${member.name}
+      ${member.occupation || ''}
+      ${member.birthPlace || ''}
+      ${member.education || ''}
+      ${member.biography || ''}
+      ${member.achievements ? member.achievements.join(' ') : ''}
+      ${member.businessInterests ? member.businessInterests.join(' ') : ''}
+      ${member.residences ? member.residences.join(' ') : ''}
+    `.toLowerCase();
+
+    index.push({
+      type: 'member',
+      id: member.id,
+      name: member.name,
+      text: searchableText,
+      data: member
+    });
+  });
+
+  // Index timeline events
+  if (familyData.timeline) {
+    familyData.timeline.forEach((event, idx) => {
+      const searchableText = `
+        ${event.year || ''}
+        ${event.title || ''}
+        ${event.description || ''}
+        ${event.source || ''}
+      `.toLowerCase();
+
+      index.push({
+        type: 'timeline',
+        id: idx,
+        name: event.title,
+        text: searchableText,
+        data: event
+      });
+    });
+  }
+
+  // Index properties
+  if (familyData.properties) {
+    familyData.properties.forEach((prop, idx) => {
+      const searchableText = `
+        ${prop.name || ''}
+        ${prop.address || ''}
+        ${prop.description || ''}
+        ${prop.historical_significance || ''}
+      `.toLowerCase();
+
+      index.push({
+        type: 'property',
+        id: idx,
+        name: prop.name,
+        text: searchableText,
+        data: prop
+      });
+    });
+  }
+
+  return index;
+}
+
+// Fuzzy string matching algorithm
+function calculateLevenshteinDistance(str1, str2) {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const matrix = [];
+
+  for (let i = 0; i <= len2; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= len1; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= len2; i++) {
+    for (let j = 1; j <= len1; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[len2][len1];
+}
+
+// Perform full-text search with fuzzy matching
+function performFullTextSearch(query) {
+  if (!query || query.trim().length === 0) return [];
+
+  const searchIndex = buildSearchIndex();
+  const normalizedQuery = query.toLowerCase().trim();
+  const results = [];
+
+  searchIndex.forEach(item => {
+    // Exact match in searchable text
+    if (item.text.includes(normalizedQuery)) {
+      results.push({...item, score: 1.0, matchType: 'exact'});
+      return;
+    }
+
+    // Fuzzy match on name/title
+    const distance = calculateLevenshteinDistance(normalizedQuery, item.name.toLowerCase());
+    const maxLen = Math.max(normalizedQuery.length, item.name.length);
+    const fuzzyScore = 1 - (distance / maxLen);
+
+    if (fuzzyScore > 0.6) {
+      results.push({...item, score: fuzzyScore, matchType: 'fuzzy'});
+      return;
+    }
+
+    // Partial word match
+    const words = item.text.split(/\s+/);
+    const queryWords = normalizedQuery.split(/\s+/);
+    let matchCount = 0;
+
+    queryWords.forEach(qWord => {
+      if (words.some(word => word.includes(qWord))) {
+        matchCount++;
+      }
+    });
+
+    if (matchCount > 0) {
+      const partialScore = matchCount / queryWords.length;
+      results.push({...item, score: partialScore * 0.7, matchType: 'partial'});
+    }
+  });
+
+  // Remove duplicates and sort by score
+  const uniqueResults = [];
+  const seen = new Set();
+
+  results.sort((a, b) => b.score - a.score);
+
+  results.forEach(result => {
+    const key = `${result.type}-${result.id}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueResults.push(result);
+    }
+  });
+
+  // Add to search history
+  addToSearchHistory(query);
+
+  return uniqueResults;
+}
+
+// Display search results
+function displaySearchResults(results) {
+  const resultsContainer = document.getElementById('search-results');
+  if (!resultsContainer) return;
+
+  if (results.length === 0) {
+    resultsContainer.innerHTML = '<p class="no-results">No results found</p>';
+    return;
+  }
+
+  let html = '<div class="search-results-list">';
+
+  results.forEach(result => {
+    let itemHtml = '';
+
+    if (result.type === 'member') {
+      const member = result.data;
+      itemHtml = `
+        <div class="search-result-item member-result" onclick="showMemberModal(${member.id})">
+          <div class="result-header">
+            <h4>${escapeHtml(member.name)}</h4>
+            <span class="result-type">Family Member</span>
+          </div>
+          <div class="result-details">
+            <p class="occupation">${member.occupation || 'Not specified'}</p>
+            <p class="dates">${member.dates || ''}</p>
+            <p class="location">${member.birthPlace || ''}</p>
+          </div>
+        </div>
+      `;
+    } else if (result.type === 'timeline') {
+      const event = result.data;
+      itemHtml = `
+        <div class="search-result-item timeline-result">
+          <div class="result-header">
+            <h4>${escapeHtml(event.title || 'Timeline Event')}</h4>
+            <span class="result-type">Timeline Event</span>
+          </div>
+          <div class="result-details">
+            <p class="year">${event.year || ''}</p>
+            <p class="description">${event.description ? event.description.substring(0, 150) + '...' : ''}</p>
+          </div>
+        </div>
+      `;
+    } else if (result.type === 'property') {
+      const prop = result.data;
+      itemHtml = `
+        <div class="search-result-item property-result">
+          <div class="result-header">
+            <h4>${escapeHtml(prop.name || 'Property')}</h4>
+            <span class="result-type">Property</span>
+          </div>
+          <div class="result-details">
+            <p class="address">${prop.address || 'Location unknown'}</p>
+            <p class="description">${prop.description ? prop.description.substring(0, 150) + '...' : ''}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    html += itemHtml;
+  });
+
+  html += '</div>';
+  resultsContainer.innerHTML = html;
+}
+
+// Initialize search functionality
+function initializeSearch() {
+  const searchInput = document.getElementById('search-input');
+  const searchBtn = document.getElementById('search-btn');
+  const recentSearches = document.getElementById('recent-searches');
+
+  if (!searchInput) return;
+
+  // Search on input with debounce
+  let searchTimeout;
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const query = e.target.value;
+
+    searchTimeout = setTimeout(() => {
+      if (query.trim().length > 0) {
+        const results = performFullTextSearch(query);
+        displaySearchResults(results);
+      } else {
+        const resultsContainer = document.getElementById('search-results');
+        if (resultsContainer) {
+          resultsContainer.innerHTML = '';
+        }
+      }
+    }, 300);
+  });
+
+  // Search on button click
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      const query = searchInput.value;
+      if (query.trim().length > 0) {
+        const results = performFullTextSearch(query);
+        displaySearchResults(results);
+      }
+    });
+  }
+
+  // Display recent searches
+  if (recentSearches) {
+    displayRecentSearches();
+  }
+}
+
+// ============================================
+// PHASE 2: DATA PERSISTENCE & BOOKMARKING
+// ============================================
+
+const STORAGE_KEYS = {
+  BOOKMARKS: 'family-bookmarks',
+  SEARCH_HISTORY: 'family-search-history',
+  PREFERENCES: 'family-preferences',
+  NOTES: 'family-notes'
+};
+
+// Bookmarking system
+function toggleBookmark(memberId) {
+  const bookmarks = getBookmarks();
+  const index = bookmarks.indexOf(memberId);
+
+  if (index > -1) {
+    bookmarks.splice(index, 1);
+  } else {
+    bookmarks.push(memberId);
+  }
+
+  localStorage.setItem(STORAGE_KEYS.BOOKMARKS, JSON.stringify(bookmarks));
+  updateBookmarkUI();
+  return bookmarks.includes(memberId);
+}
+
+function getBookmarks() {
+  const stored = localStorage.getItem(STORAGE_KEYS.BOOKMARKS);
+  return stored ? JSON.parse(stored) : [];
+}
+
+function isBookmarked(memberId) {
+  return getBookmarks().includes(memberId);
+}
+
+function updateBookmarkUI() {
+  const bookmarkButtons = document.querySelectorAll('.bookmark-btn');
+  bookmarkButtons.forEach(btn => {
+    const memberId = parseInt(btn.dataset.memberId);
+    btn.classList.toggle('bookmarked', isBookmarked(memberId));
+  });
+}
+
+// Search history
+function addToSearchHistory(query) {
+  const history = getSearchHistory();
+  const index = history.indexOf(query);
+
+  if (index > -1) {
+    history.splice(index, 1);
+  }
+
+  history.unshift(query);
+  history = history.slice(0, 20); // Keep only last 20
+
+  localStorage.setItem(STORAGE_KEYS.SEARCH_HISTORY, JSON.stringify(history));
+}
+
+function getSearchHistory() {
+  const stored = localStorage.getItem(STORAGE_KEYS.SEARCH_HISTORY);
+  return stored ? JSON.parse(stored) : [];
+}
+
+function displayRecentSearches() {
+  const container = document.getElementById('recent-searches');
+  if (!container) return;
+
+  const history = getSearchHistory();
+
+  if (history.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="recent-searches-list"><strong>Recent Searches:</strong> ';
+  html += history.slice(0, 5).map(search =>
+    `<span class="search-tag" onclick="document.getElementById('search-input').value='${escapeHtml(search)}'; performFullTextSearch('${escapeHtml(search)}');">${escapeHtml(search)}</span>`
+  ).join('');
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+// User preferences
+function savePreferences(prefs) {
+  const currentPrefs = getPreferences();
+  const updated = {...currentPrefs, ...prefs};
+  localStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(updated));
+}
+
+function getPreferences() {
+  const stored = localStorage.getItem(STORAGE_KEYS.PREFERENCES);
+  return stored ? JSON.parse(stored) : {
+    lastSection: 'home',
+    filterGeneration: null,
+    filterOccupation: null,
+    filterLocation: null,
+    theme: 'light'
+  };
+}
+
+function applyPreferences() {
+  const prefs = getPreferences();
+
+  if (prefs.lastSection) {
+    // Note: Don't auto-navigate, but make preference available for restore
+  }
+}
+
+// Personal notes
+function saveNote(memberId, noteText) {
+  const notes = getNotes();
+  notes[memberId] = {
+    text: noteText,
+    timestamp: new Date().toISOString()
+  };
+  localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
+}
+
+function getNote(memberId) {
+  const notes = getNotes();
+  return notes[memberId] || null;
+}
+
+function getNotes() {
+  const stored = localStorage.getItem(STORAGE_KEYS.NOTES);
+  return stored ? JSON.parse(stored) : {};
+}
+
+function displayNoteEditor(memberId) {
+  const member = familyData.familyMembers.find(m => m.id === memberId);
+  if (!member) return;
+
+  const note = getNote(memberId);
+  const modal = document.createElement('div');
+  modal.className = 'note-modal';
+  modal.innerHTML = `
+    <div class="note-modal-content">
+      <div class="note-modal-header">
+        <h3>Personal Notes: ${escapeHtml(member.name)}</h3>
+        <button class="close-btn" onclick="this.closest('.note-modal').remove()">×</button>
+      </div>
+      <textarea id="note-textarea" class="note-textarea" placeholder="Add your personal notes here...">${note ? escapeHtml(note.text) : ''}</textarea>
+      <div class="note-modal-footer">
+        <button onclick="saveAndCloseNote(${memberId})" class="btn btn-primary">Save Note</button>
+        <button onclick="this.closest('.note-modal').remove()" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.style.display = 'block';
+  document.getElementById('note-textarea').focus();
+}
+
+function saveAndCloseNote(memberId) {
+  const textarea = document.getElementById('note-textarea');
+  if (textarea) {
+    saveNote(memberId, textarea.value);
+    document.querySelector('.note-modal').remove();
+  }
+}
+
+// Export bookmarks
+function exportBookmarks() {
+  const bookmarks = getBookmarks();
+  const bookmarkedMembers = bookmarks
+    .map(id => familyData.familyMembers.find(m => m.id === id))
+    .filter(m => m);
+
+  const csv = convertToCSV(bookmarkedMembers);
+  downloadCSV(csv, 'family-bookmarks.csv');
+}
+
+// Export notes
+function exportNotes() {
+  const notes = getNotes();
+  let markdown = '# Personal Family History Notes\n\n';
+
+  Object.entries(notes).forEach(([memberId, note]) => {
+    const member = familyData.familyMembers.find(m => m.id === parseInt(memberId));
+    if (member) {
+      markdown += `## ${member.name}\n`;
+      markdown += `*Created: ${new Date(note.timestamp).toLocaleDateString()}*\n\n`;
+      markdown += `${note.text}\n\n---\n\n`;
+    }
+  });
+
+  const blob = new Blob([markdown], {type: 'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'family-notes.md';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================
+// PHASE 3: SMART RECOMMENDATIONS
+// ============================================
+
+function getSimilarMembers(memberId, limit = 5) {
+  const member = familyData.familyMembers.find(m => m.id === memberId);
+  if (!member) return [];
+
+  const similarities = familyData.familyMembers
+    .filter(m => m.id !== memberId)
+    .map(other => {
+      let score = 0;
+
+      // Same generation
+      if (other.generation === member.generation) score += 3;
+
+      // Similar occupation
+      if (other.occupation && member.occupation &&
+          other.occupation.toLowerCase().includes(member.occupation.toLowerCase())) {
+        score += 2;
+      }
+
+      // Same location
+      if (other.birthPlace && member.birthPlace &&
+          other.birthPlace.toLowerCase() === member.birthPlace.toLowerCase()) {
+        score += 2;
+      }
+
+      // Similar era (within 20 years)
+      if (member.dates && other.dates) {
+        const memberStart = parseInt(member.dates.split('-')[0]);
+        const otherStart = parseInt(other.dates.split('-')[0]);
+        if (Math.abs(memberStart - otherStart) <= 20) score += 1;
+      }
+
+      // Shared achievements category
+      if (member.categories && other.categories) {
+        const shared = member.categories.filter(c => other.categories.includes(c));
+        score += shared.length;
+      }
+
+      return {member: other, score};
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return similarities.map(s => s.member);
+}
+
+function getRelatedMembers(memberId, limit = 5) {
+  const member = familyData.familyMembers.find(m => m.id === memberId);
+  if (!member) return [];
+
+  const related = new Set();
+
+  // Add spouse
+  if (member.spouse) {
+    const spouse = familyData.familyMembers.find(m => m.name === member.spouse);
+    if (spouse) related.add(spouse);
+  }
+
+  // Add children
+  if (member.children && Array.isArray(member.children)) {
+    member.children.forEach(childName => {
+      const child = familyData.familyMembers.find(m => m.name === childName);
+      if (child) related.add(child);
+    });
+  }
+
+  // Add parents (find by children relationship)
+  familyData.familyMembers.forEach(other => {
+    if (other.children && other.children.includes(member.name)) {
+      related.add(other);
+    }
+  });
+
+  return Array.from(related).slice(0, limit);
+}
+
+function displayRecommendations(memberId) {
+  const container = document.getElementById('recommendations-container');
+  if (!container) return;
+
+  const similar = getSimilarMembers(memberId);
+  const related = getRelatedMembers(memberId);
+
+  let html = '<div class="recommendations">';
+
+  if (related.length > 0) {
+    html += '<div class="recommendation-group"><h4>Family Relations</h4>';
+    html += related.map(m => `
+      <div class="recommendation-item" onclick="showMemberModal(${m.id})">
+        <div class="rec-name">${escapeHtml(m.name)}</div>
+        <div class="rec-detail">${m.occupation || 'Family member'}</div>
+      </div>
+    `).join('');
+    html += '</div>';
+  }
+
+  if (similar.length > 0) {
+    html += '<div class="recommendation-group"><h4>Similar Members</h4>';
+    html += similar.map(m => `
+      <div class="recommendation-item" onclick="showMemberModal(${m.id})">
+        <div class="rec-name">${escapeHtml(m.name)}</div>
+        <div class="rec-detail">${m.occupation || 'Generation ' + m.generation}</div>
+      </div>
+    `).join('');
+    html += '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ============================================
+// PHASE 3A: ADVANCED VISUALIZATIONS
+// ============================================
+
+// Relationship network graph using Canvas
+function initializeRelationshipNetwork() {
+  const canvas = document.getElementById('relationship-network-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+
+  // Create nodes for each member
+  const nodes = familyData.familyMembers.map((member, index) => {
+    const angle = (index / familyData.familyMembers.length) * Math.PI * 2;
+    const radius = Math.min(width, height) / 3;
+    return {
+      id: member.id,
+      name: member.name,
+      x: width / 2 + radius * Math.cos(angle),
+      y: height / 2 + radius * Math.sin(angle),
+      radius: 8,
+      generation: member.generation
+    };
+  });
+
+  // Draw connections
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+
+  familyData.familyMembers.forEach(member => {
+    const fromNode = nodes.find(n => n.id === member.id);
+    if (!fromNode) return;
+
+    // Draw spouse connection
+    if (member.spouse) {
+      const spouse = familyData.familyMembers.find(m => m.name === member.spouse);
+      if (spouse) {
+        const toNode = nodes.find(n => n.id === spouse.id);
+        if (toNode) {
+          ctx.beginPath();
+          ctx.moveTo(fromNode.x, fromNode.y);
+          ctx.lineTo(toNode.x, toNode.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Draw parent-child connections
+    if (member.children && Array.isArray(member.children)) {
+      member.children.forEach(childName => {
+        const child = familyData.familyMembers.find(m => m.name === childName);
+        if (child) {
+          const toNode = nodes.find(n => n.id === child.id);
+          if (toNode) {
+            ctx.strokeStyle = '#bbb';
+            ctx.beginPath();
+            ctx.moveTo(fromNode.x, fromNode.y);
+            ctx.lineTo(toNode.x, toNode.y);
+            ctx.stroke();
+          }
+        }
+      });
+    }
+  });
+
+  // Draw nodes
+  nodes.forEach((node, index) => {
+    const member = familyData.familyMembers[index];
+
+    // Color by generation
+    const colors = ['#8B4513', '#A0522D', '#CD853F', '#DAA520', '#FFD700', '#FFA500'];
+    ctx.fillStyle = colors[node.generation % colors.length];
+
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = '#000';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(node.name.split(' ')[0], node.x, node.y - 15);
+  });
+}
+
+// Lifespan overlap timeline
+function initializeLifespanTimeline() {
+  const canvas = document.getElementById('lifespan-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = 40;
+
+  // Extract birth/death years
+  const members = familyData.familyMembers
+    .filter(m => m.dates)
+    .map(m => {
+      const dates = m.dates.split('-');
+      return {
+        name: m.name,
+        birth: parseInt(dates[0]),
+        death: parseInt(dates[1])
+      };
+    })
+    .sort((a, b) => a.birth - b.birth);
+
+  if (members.length === 0) return;
+
+  const minYear = Math.min(...members.map(m => m.birth)) - 5;
+  const maxYear = Math.max(...members.map(m => m.death)) + 5;
+  const yearRange = maxYear - minYear;
+
+  // Draw timeline axis
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(padding, padding);
+  ctx.lineTo(padding, height - padding);
+  ctx.lineTo(width - padding, height - padding);
+  ctx.stroke();
+
+  // Draw year labels
+  ctx.fillStyle = '#666';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  for (let year = minYear; year <= maxYear; year += 20) {
+    const x = padding + ((year - minYear) / yearRange) * (width - 2 * padding);
+    ctx.fillText(year, x, height - padding + 20);
+
+    ctx.strokeStyle = '#eee';
+    ctx.beginPath();
+    ctx.moveTo(x, padding);
+    ctx.lineTo(x, height - padding);
+    ctx.stroke();
+  }
+
+  // Draw member lifespans
+  members.forEach((member, index) => {
+    const y = padding + 20 + (index * ((height - 2 * padding - 40) / members.length));
+
+    const startX = padding + ((member.birth - minYear) / yearRange) * (width - 2 * padding);
+    const endX = padding + ((member.death - minYear) / yearRange) * (width - 2 * padding);
+
+    // Draw lifespan bar
+    ctx.fillStyle = `hsl(${index * 360 / members.length}, 70%, 60%)`;
+    ctx.fillRect(startX, y - 5, endX - startX, 10);
+
+    // Draw member name
+    ctx.fillStyle = '#333';
+    ctx.font = '11px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(member.name, padding - 10, y + 3);
+  });
+}
+
+// Geographic heat map
+function initializeGeographicHeatmap() {
+  const canvas = document.getElementById('geographic-heatmap');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+
+  // Simple state box positions (simplified US map)
+  const stateBoxes = {
+    'Virginia': {x: 70, y: 30, w: 40, h: 40},
+    'North Carolina': {x: 75, y: 75, w: 45, h: 35},
+    'South Carolina': {x: 75, y: 110, w: 45, h: 30},
+    'Georgia': {x: 70, y: 140, w: 50, h: 40},
+    'Florida': {x: 85, y: 180, w: 40, h: 50}
+  };
+
+  // Count members by location
+  const locationCounts = {};
+  familyData.familyMembers.forEach(member => {
+    const loc = member.birthPlace ? member.birthPlace.split(',').pop().trim() : null;
+    if (loc) {
+      locationCounts[loc] = (locationCounts[loc] || 0) + 1;
+    }
+  });
+
+  const maxCount = Math.max(...Object.values(locationCounts));
+
+  // Draw states with heat coloring
+  Object.entries(stateBoxes).forEach(([state, box]) => {
+    const count = locationCounts[state] || 0;
+    const intensity = count / maxCount;
+
+    // Heat color: red for high, blue for low
+    const hue = (1 - intensity) * 240; // Blue to Red
+    ctx.fillStyle = `hsl(${hue}, 100%, ${50 + intensity * 20}%)`;
+
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+
+    // Draw state name and count
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(state, box.x + box.w / 2, box.y + box.h / 2 - 5);
+    ctx.fillText(`(${count})`, box.x + box.w / 2, box.y + box.h / 2 + 10);
+  });
+
+  // Draw legend
+  ctx.fillStyle = '#333';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('Concentration: Low', 180, 20);
+  ctx.fillText('High', 180, 40);
+
+  for (let i = 0; i <= 10; i++) {
+    const hue = (1 - i / 10) * 240;
+    ctx.fillStyle = `hsl(${hue}, 100%, 70%)`;
+    ctx.fillRect(260 + i * 10, 10, 10, 20);
+  }
+}
+
+// ============================================
+// INITIALIZATION & GLOBAL EXPORTS
+// ============================================
+
+// Initialize all new features on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initializeSearch();
+  applyPreferences();
+  setTimeout(() => {
+    initializeRelationshipNetwork();
+    initializeLifespanTimeline();
+    initializeGeographicHeatmap();
+  }, 500);
+});
+
 // Make functions globally available
 window.openComparisonModal = openComparisonModal;
 window.closeComparisonModal = closeComparisonModal;
@@ -4685,4 +5514,31 @@ window.seekTimeline = seekTimeline;
 window.shareMember = shareMember;
 window.handleDeepLinks = handleDeepLinks;
 
-console.log('Enhanced JavaScript with relationship mapping loaded successfully');
+// Phase 1: Search & Discovery exports
+window.performFullTextSearch = performFullTextSearch;
+window.displaySearchResults = displaySearchResults;
+window.initializeSearch = initializeSearch;
+
+// Phase 2: Bookmarking & Persistence exports
+window.toggleBookmark = toggleBookmark;
+window.isBookmarked = isBookmarked;
+window.exportBookmarks = exportBookmarks;
+window.exportNotes = exportNotes;
+window.displayNoteEditor = displayNoteEditor;
+window.saveAndCloseNote = saveAndCloseNote;
+window.getBookmarks = getBookmarks;
+window.getSearchHistory = getSearchHistory;
+window.savePreferences = savePreferences;
+window.getPreferences = getPreferences;
+
+// Phase 3: Recommendations exports
+window.getSimilarMembers = getSimilarMembers;
+window.getRelatedMembers = getRelatedMembers;
+window.displayRecommendations = displayRecommendations;
+
+// Phase 3A: Visualizations exports
+window.initializeRelationshipNetwork = initializeRelationshipNetwork;
+window.initializeLifespanTimeline = initializeLifespanTimeline;
+window.initializeGeographicHeatmap = initializeGeographicHeatmap;
+
+console.log('Enhanced JavaScript with search, bookmarking, recommendations, and advanced visualizations loaded successfully');
